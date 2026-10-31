@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Users, ShoppingBag, Home, DollarSign, Plus, Trash2, Settings, 
-  Calendar, Clock, MapPin, Check, X, ChevronRight, Share2, Camera, Upload, Edit3
+  Calendar, Clock, MapPin, Check, X, ChevronRight, Share2, Camera, Upload, Edit3, MessageCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -14,22 +14,23 @@ export default function App() {
   const [weddingProfile, setWeddingProfile] = useState({
     groomName: 'Vansh',
     brideName: 'Riya',
-    dateRangeLabel: 'Feb 14 – Feb 16, 2027',
-    city: 'Jabalpur / Bengaluru',
+    dateRangeLabel: 'November 24–25, 2026',
+    city: 'Taj Yeshwantpur, Bengaluru',
     ceremonies: [
-      { id: 'haldi', name: 'Haldi', date: '14 Feb 2027', time: '10:00 AM', venue: 'Poolside Lawn' },
-      { id: 'mehendi', name: 'Mehendi', date: '14 Feb 2027', time: '04:30 PM', venue: 'Garden Courtyard' },
-      { id: 'sangeet', name: 'Sangeet', date: '15 Feb 2027', time: '07:30 PM', venue: 'Royal Ballroom' },
-      { id: 'wedding', name: 'Wedding', date: '16 Feb 2027', time: '11:30 AM', venue: 'Main Mandap Lawn' },
-      { id: 'reception', name: 'Reception', date: '16 Feb 2027', time: '08:00 PM', venue: 'Grand Banquet Hall' }
+      { id: 'haldi', name: 'Haldi', date: '24 Nov 2026', time: '10:00 AM', venue: 'Poolside Lawn' },
+      { id: 'mehendi', name: 'Mehendi', date: '24 Nov 2026', time: '04:30 PM', venue: 'Garden Courtyard' },
+      { id: 'sangeet', name: 'Sangeet', date: '24 Nov 2026', time: '07:30 PM', venue: 'Royal Ballroom' },
+      { id: 'wedding', name: 'Wedding', date: '25 Nov 2026', time: '11:30 AM', venue: 'Main Mandap Lawn' },
+      { id: 'reception', name: 'Reception', date: '25 Nov 2026', time: '08:00 PM', venue: 'Grand Banquet Hall' }
     ]
   });
 
   // RSVP Theme Studio State
   const [showThemeModal, setShowThemeModal] = useState(false);
+  const [showAddFamilyModal, setShowAddFamilyModal] = useState(false);
   const [rsvpTheme, setRsvpTheme] = useState({
-    bgColor: '#1c1917', // stone-900
-    textColor: '#f5f5f4', // stone-100
+    bgColor: '#ffffff', // white editorial default
+    textColor: '#1c1917', // stone-900
     bgImage: '',
     overlayOpacity: 0.6
   });
@@ -38,18 +39,18 @@ export default function App() {
   const [households, setHouseholds] = useState([
     {
       id: 1,
-      name: 'Sharma Family',
+      name: 'Sharma Family (Rajesh & Sunita)',
       side: 'Bride',
       whatsapp: '+919876543210',
       isOutstation: true,
       invitedEvents: ['haldi', 'mehendi', 'wedding', 'reception'],
       status: 'Attending',
       headcount: 4,
-      arrivalDate: '2027-02-13',
+      arrivalDate: '2026-11-23',
       arrivalTime: '14:00',
-      departureDate: '2027-02-17',
+      departureDate: '2026-11-26',
       departureTime: '10:00',
-      allocatedStay: 'Hotel Taj Vivanta - Room 304'
+      allocatedStay: 'Taj Yeshwantpur - Room 304'
     },
     {
       id: 2,
@@ -68,11 +69,15 @@ export default function App() {
     }
   ]);
 
-  // New Household Form State
+  // New Household Form Modal State
   const [newFamilyName, setNewFamilyName] = useState('');
   const [newFamilySide, setNewFamilySide] = useState('Groom');
   const [newFamilyPhone, setNewFamilyPhone] = useState('');
-  const [newFamilyOutstation, setNewFamilyOutstation] = useState(false);
+  const [newFamilyHeadcount, setNewFamilyHeadcount] = useState(2);
+  const [newFamilyOutstation, setNewFamilyOutstation] = useState(true);
+  const [newFamilySelectedEvents, setNewFamilySelectedEvents] = useState(
+    weddingProfile.ceremonies.map(c => c.id)
+  );
 
   // Tab 2: Shopping Checklist State
   const [inventory, setInventory] = useState([
@@ -83,14 +88,11 @@ export default function App() {
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('Apparel');
 
-  // Tab 3: Stay & Hospitality State
-  // (Uses households list where isOutstation === true)
-
   // Tab 4: Budget & Vendors State
   const [vendors, setVendors] = useState([
-    { id: 1, name: 'Grand Resort & Lawn', category: 'Venue', side: 'Shared', total: 450000, paid: 150000, dueDate: '2027-01-10' },
-    { id: 2, name: 'Royal Craters Catering', category: 'Catering', side: 'Bride', total: 320000, paid: 100000, dueDate: '2027-01-25' },
-    { id: 3, name: 'Shutterdown Photography', category: 'Media', side: 'Groom', total: 150000, paid: 50000, dueDate: '2027-02-01' }
+    { id: 1, name: 'Taj Yeshwantpur', category: 'Venue', side: 'Shared', total: 450000, paid: 150000, dueDate: '2026-10-10' },
+    { id: 2, name: 'Royal Craters Catering', category: 'Catering', side: 'Bride', total: 320000, paid: 100000, dueDate: '2026-10-25' },
+    { id: 3, name: 'Shutterdown Photography', category: 'Media', side: 'Groom', total: 150000, paid: 50000, dueDate: '2026-11-01' }
   ]);
 
   // Handlers for Dynamic Ceremonies
@@ -102,10 +104,8 @@ export default function App() {
   const addCeremony = () => {
     if (!newCeremonyName) return;
     const id = newCeremonyName.toLowerCase().replace(/\s+/g, '-');
-    const updated = [...weddingProfile.ceremonies, { id, name: newCeremonyName, date: newCeremonyDate || '15 Feb 2027', time: newCeremonyTime || '06:00 PM', venue: newCeremonyVenue || 'Main Lawn' }];
+    const updated = [...weddingProfile.ceremonies, { id, name: newCeremonyName, date: newCeremonyDate || '24 Nov 2026', time: newCeremonyTime || '06:00 PM', venue: newCeremonyVenue || 'Grand Lawn' }];
     setWeddingProfile({ ...weddingProfile, ceremonies: updated });
-    // Also auto-invite existing households to new ceremony by default
-    setHouseholds(households.map(h => ({ ...h, invitedEvents: [...h.invitedEvents, id] })));
     setNewCeremonyName('');
     setNewCeremonyDate('');
     setNewCeremonyTime('');
@@ -131,6 +131,14 @@ export default function App() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // WhatsApp share trigger handler
+  const sendWhatsAppInvite = (h) => {
+    const message = encodeURIComponent(
+      `Dear ${h.name},\n\nYou are cordially invited to the wedding celebrations of ${weddingProfile.groomName} & ${weddingProfile.brideName} (${weddingProfile.dateRangeLabel}).\n\nPlease view your personalized invitation and RSVP here:\nhttps://wedding-hub.app/rsvp/${h.id}`
+    );
+    window.open(`https://wa.me/${h.whatsapp.replace(/[^0-9]/g, '')}?text=${message}`, '_blank');
   };
 
   return (
@@ -184,7 +192,7 @@ export default function App() {
         
         {viewMode === 'guest-preview' ? (
           /* ================= GUEST RSVP PORTAL VIEW ================= */
-          <div className="max-w-md mx-auto rounded-2xl overflow-hidden shadow-xl border border-stone-200 relative min-h-[650px] flex flex-col justify-between p-6 transition-all"
+          <div className="max-w-md mx-auto rounded-2xl overflow-hidden shadow-xl border border-stone-200 relative min-h-162.5 flex flex-col justify-between p-6 transition-all"
                style={{
                  backgroundColor: rsvpTheme.bgColor,
                  color: rsvpTheme.textColor,
@@ -203,37 +211,42 @@ export default function App() {
                 <span className="text-xs uppercase tracking-widest opacity-80 font-mono">Wedding Invitation</span>
                 <button 
                   onClick={() => setViewMode('admin')}
-                  className="text-xs px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md transition flex items-center gap-1"
+                  className="text-xs px-2.5 py-1 rounded-full bg-stone-900/10 hover:bg-stone-900/20 backdrop-blur-md transition flex items-center gap-1 font-medium"
                 >
                   <X size={12} /> Exit Preview
                 </button>
               </div>
 
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-serif tracking-tight mb-2">
+              <div className="text-center mb-6">
+                <h2 className="text-3xl font-serif tracking-tight mb-1">
                   {weddingProfile.groomName} & {weddingProfile.brideName}
                 </h2>
-                <p className="text-sm opacity-90">{weddingProfile.dateRangeLabel}</p>
-                <div className="mt-4 p-3 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-left">
-                  <p className="text-xs opacity-70 uppercase font-mono">Invited Family Unit</p>
-                  <p className="font-semibold text-base">{selectedGuestPreview?.name || 'Sharma Family'}</p>
+                <p className="text-xs opacity-80">{weddingProfile.dateRangeLabel} • {weddingProfile.city}</p>
+                <div className="w-12 h-1px bg-stone-400 mx-auto my-4 opacity-40"></div>
+                
+                {/* v1.3 Editorial Greeting Layout */}
+                <div className="text-left space-y-1">
+                  <p className="font-semibold text-sm">Dear {selectedGuestPreview?.name || 'Sharma Family'},</p>
+                  <p className="text-xs opacity-90 leading-relaxed">
+                    We have reserved up to {selectedGuestPreview?.headcount || 4} seats for your family. All ceremonies feature a 100% pure vegetarian menu.
+                  </p>
                 </div>
               </div>
 
               {/* RSVP Form */}
               <div className="space-y-4 bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/15">
-                <h3 className="text-xs font-semibold uppercase tracking-wider opacity-80">Confirm Attendance</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wider opacity-80">1. Confirm Ceremony Attendance</h3>
                 
                 <div className="space-y-2">
                   {weddingProfile.ceremonies.map(c => {
                     const isInvited = selectedGuestPreview?.invitedEvents?.includes(c.id);
                     return (
-                      <div key={c.id} className="flex items-center justify-between text-xs py-1.5 border-b border-white/10">
+                      <div key={c.id} className="flex items-center justify-between text-xs py-1.5 border-b border-stone-400/20">
                         <div>
                           <p className="font-medium">{c.name}</p>
-                          <p className="opacity-70 text-[10px]">{c.date} • {c.time}</p>
+                          <p className="opacity-70 text-[10px]">{c.date} • {c.time} • {c.venue}</p>
                         </div>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${isInvited ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-500/40' : 'bg-stone-500/30 text-stone-300'}`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${isInvited ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-stone-500/20 text-stone-400'}`}>
                           {isInvited ? 'Invited' : 'Not Invited'}
                         </span>
                       </div>
@@ -265,7 +278,7 @@ export default function App() {
                   </div>
                 )}
 
-                <button className="w-full bg-white text-stone-950 font-semibold py-2.5 rounded-lg text-sm shadow hover:bg-stone-100 transition mt-2">
+                <button className="w-full bg-stone-900 text-white font-semibold py-2.5 rounded-lg text-sm shadow hover:bg-stone-800 transition mt-2">
                   Submit RSVP Response
                 </button>
               </div>
@@ -336,73 +349,20 @@ export default function App() {
                       <h3 className="font-semibold text-base">Household & RSVP Master List</h3>
                       <p className="text-xs text-stone-500">Manage family units, WhatsApp invites, and ceremony access.</p>
                     </div>
-                    <button 
-                      onClick={() => setShowThemeModal(true)}
-                      className="bg-stone-900 text-white text-xs px-3 py-2 rounded-lg font-medium hover:bg-stone-800 transition flex items-center gap-1.5"
-                    >
-                      <Plus size={14} /> Add / Manage Ceremonies
-                    </button>
-                  </div>
-
-                  {/* Add Family Quick Form */}
-                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 mb-6 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-                    <div>
-                      <label className="block text-[10px] uppercase font-mono text-stone-500 mb-1">Family Name</label>
-                      <input 
-                        type="text" 
-                        value={newFamilyName} 
-                        onChange={(e) => setNewFamilyName(e.target.value)} 
-                        placeholder="e.g. Verma Family" 
-                        className="w-full bg-white border border-stone-200 rounded-lg px-3 py-1.5 text-xs" 
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase font-mono text-stone-500 mb-1">Side</label>
-                      <select 
-                        value={newFamilySide} 
-                        onChange={(e) => setNewFamilySide(e.target.value)}
-                        className="w-full bg-white border border-stone-200 rounded-lg px-3 py-1.5 text-xs"
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => setShowAddFamilyModal(true)}
+                        className="bg-stone-900 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-stone-800 transition flex items-center gap-1.5 shadow-sm"
                       >
-                        <option value="Groom">Groom Side</option>
-                        <option value="Bride">Bride Side</option>
-                        <option value="Mutual">Mutual</option>
-                      </select>
+                        <Plus size={14} /> Add Household
+                      </button>
+                      <button 
+                        onClick={() => setShowThemeModal(true)}
+                        className="bg-stone-100 text-stone-700 text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-stone-200 transition flex items-center gap-1.5"
+                      >
+                        <Settings size={14} /> Manage Ceremonies
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-[10px] uppercase font-mono text-stone-500 mb-1">WhatsApp Number</label>
-                      <input 
-                        type="text" 
-                        value={newFamilyPhone} 
-                        onChange={(e) => setNewFamilyPhone(e.target.value)} 
-                        placeholder="+91..." 
-                        className="w-full bg-white border border-stone-200 rounded-lg px-3 py-1.5 text-xs" 
-                      />
-                    </div>
-                    <button 
-                      onClick={() => {
-                        if (!newFamilyName) return;
-                        setHouseholds([...households, {
-                          id: Date.now(),
-                          name: newFamilyName,
-                          side: newFamilySide,
-                          whatsapp: newFamilyPhone || '+919999999999',
-                          isOutstation: true,
-                          invitedEvents: weddingProfile.ceremonies.map(c => c.id),
-                          status: 'Pending',
-                          headcount: 2,
-                          arrivalDate: '2027-02-14',
-                          arrivalTime: '10:00',
-                          departureDate: '2027-02-16',
-                          departureTime: '18:00',
-                          allocatedStay: 'Unassigned'
-                        }]);
-                        setNewFamilyName('');
-                        setNewFamilyPhone('');
-                      }}
-                      className="bg-stone-900 text-white text-xs font-medium py-2 rounded-lg hover:bg-stone-800 transition"
-                    >
-                      Add Household
-                    </button>
                   </div>
 
                   {/* Households Table */}
@@ -422,7 +382,7 @@ export default function App() {
                           <tr key={h.id} className="hover:bg-stone-50/80 transition">
                             <td className="py-3 font-medium">
                               {h.name}
-                              <span className="block text-[10px] text-stone-400">{h.whatsapp}</span>
+                              <span className="block text-[10px] text-stone-400">{h.whatsapp} • {h.headcount} seats</span>
                             </td>
                             <td className="py-3">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${h.side === 'Bride' ? 'bg-pink-50 text-pink-700 border border-pink-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
@@ -447,7 +407,14 @@ export default function App() {
                               </span>
                             </td>
                             <td className="py-3 text-right">
-                              <div className="flex items-center justify-end gap-2">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button 
+                                  onClick={() => sendWhatsAppInvite(h)}
+                                  className="p-1.5 hover:bg-emerald-50 rounded text-emerald-600 transition"
+                                  title="Send WhatsApp Invite"
+                                >
+                                  <MessageCircle size={14} />
+                                </button>
                                 <button 
                                   onClick={() => {
                                     setSelectedGuestPreview(h);
@@ -456,14 +423,14 @@ export default function App() {
                                   className="p-1.5 hover:bg-stone-200 rounded text-stone-600 transition"
                                   title="Preview Guest RSVP Link"
                                 >
-                                  <Share2 size={13} />
+                                  <Share2 size={14} />
                                 </button>
                                 <button 
                                   onClick={() => setHouseholds(households.filter(item => item.id !== h.id))}
                                   className="p-1.5 hover:bg-red-50 rounded text-red-500 transition"
                                   title="Delete Family"
                                 >
-                                  <Trash2 size={13} />
+                                  <Trash2 size={14} />
                                 </button>
                               </div>
                             </td>
@@ -612,7 +579,7 @@ export default function App() {
                           className="bg-white border border-stone-200 rounded-lg px-3 py-1.5 text-xs w-full sm:w-60"
                         />
                         <button 
-                          onClick={() => alert(`WhatsApp stay itinerary sent to ${h.name} (${h.whatsapp})!`)}
+                          onClick={() => sendWhatsAppInvite(h)}
                           className="bg-stone-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-stone-800 transition whitespace-nowrap"
                         >
                           Send WhatsApp
@@ -690,6 +657,138 @@ export default function App() {
         )}
 
       </main>
+
+      {/* ADD HOUSEHOLD MODAL WITH HEADCOUNT & FUNCTION SELECTORS */}
+      {showAddFamilyModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-semibold text-base flex items-center gap-2">
+                <Users size={18} /> Add New Household
+              </h3>
+              <button onClick={() => setShowAddFamilyModal(false)} className="p-1 hover:bg-stone-100 rounded-full transition">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-stone-500 mb-1 font-medium">Family Name (e.g. Sharma Family)</label>
+                <input 
+                  type="text" 
+                  value={newFamilyName} 
+                  onChange={(e) => setNewFamilyName(e.target.value)} 
+                  placeholder="Family Name & Members" 
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs" 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-stone-500 mb-1 font-medium">Side</label>
+                  <select 
+                    value={newFamilySide} 
+                    onChange={(e) => setNewFamilySide(e.target.value)}
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs bg-white"
+                  >
+                    <option value="Groom">Groom Side</option>
+                    <option value="Bride">Bride Side</option>
+                    <option value="Mutual">Mutual</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-stone-500 mb-1 font-medium">Reserved Seat Count</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    max="20"
+                    value={newFamilyHeadcount} 
+                    onChange={(e) => setNewFamilyHeadcount(parseInt(e.target.value) || 1)} 
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs" 
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-stone-500 mb-1 font-medium">WhatsApp Phone Number</label>
+                <input 
+                  type="text" 
+                  value={newFamilyPhone} 
+                  onChange={(e) => setNewFamilyPhone(e.target.value)} 
+                  placeholder="+91..." 
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs" 
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input 
+                  type="checkbox" 
+                  id="outstationCheck"
+                  checked={newFamilyOutstation}
+                  onChange={(e) => setNewFamilyOutstation(e.target.checked)}
+                  className="rounded border-stone-300 accent-stone-900"
+                />
+                <label htmlFor="outstationCheck" className="text-stone-700 font-medium cursor-pointer">Outstation Guest (Requires Hotel Rooming)</label>
+              </div>
+
+              {/* Ceremony Selector Checkboxes */}
+              <div className="pt-2 border-t border-stone-200">
+                <label className="block text-stone-700 font-semibold mb-2">Select Invited Ceremonies:</label>
+                <div className="space-y-1.5 bg-stone-50 p-3 rounded-xl border border-stone-200">
+                  {weddingProfile.ceremonies.map(c => {
+                    const isChecked = newFamilySelectedEvents.includes(c.id);
+                    return (
+                      <label key={c.id} className="flex items-center gap-2 cursor-pointer text-xs">
+                        <input 
+                          type="checkbox" 
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setNewFamilySelectedEvents([...newFamilySelectedEvents, c.id]);
+                            } else {
+                              setNewFamilySelectedEvents(newFamilySelectedEvents.filter(id => id !== c.id));
+                            }
+                          }}
+                          className="rounded border-stone-300 accent-stone-900"
+                        />
+                        <span className="font-medium text-stone-800">{c.name}</span>
+                        <span className="text-stone-400 text-[10px]">({c.date})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button 
+                onClick={() => {
+                  if (!newFamilyName) return;
+                  setHouseholds([...households, {
+                    id: Date.now(),
+                    name: newFamilyName,
+                    side: newFamilySide,
+                    whatsapp: newFamilyPhone || '+919999999999',
+                    isOutstation: newFamilyOutstation,
+                    invitedEvents: newFamilySelectedEvents,
+                    status: 'Pending',
+                    headcount: newFamilyHeadcount,
+                    arrivalDate: '2026-11-23',
+                    arrivalTime: '12:00',
+                    departureDate: '2026-11-26',
+                    departureTime: '12:00',
+                    allocatedStay: newFamilyOutstation ? 'Unassigned' : 'Local Resident'
+                  }]);
+                  setNewFamilyName('');
+                  setNewFamilyPhone('');
+                  setShowAddFamilyModal(false);
+                }}
+                className="w-full bg-stone-900 text-white font-medium py-2.5 rounded-lg hover:bg-stone-800 transition mt-2"
+              >
+                Save Household & Generate Invite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* THEME & SAAS PROFILE CUSTOMIZER MODAL */}
       {showThemeModal && (
@@ -773,7 +872,7 @@ export default function App() {
                     />
                     <input 
                       type="text" 
-                      placeholder="Date (e.g. 15 Feb 2027)" 
+                      placeholder="Date (e.g. 25 Nov 2026)" 
                       value={newCeremonyDate}
                       onChange={(e) => setNewCeremonyDate(e.target.value)}
                       className="border border-stone-200 rounded px-2.5 py-1.5 bg-white"
@@ -847,11 +946,22 @@ export default function App() {
 
                 <div>
                   <label className="block text-stone-500 mb-1">Background Image Upload</label>
-                  <label className="flex items-center justify-center gap-2 border-2 border-dashed border-stone-300 rounded-xl p-4 cursor-pointer hover:border-stone-400 bg-stone-50 transition">
-                    <Upload size={16} className="text-stone-500" />
-                    <span className="text-stone-600 font-medium">Click to upload background image</span>
-                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center justify-center gap-2 border-2 border-dashed border-stone-300 rounded-xl p-3 cursor-pointer hover:border-stone-400 bg-stone-50 transition flex-1">
+                      <Upload size={16} className="text-stone-500" />
+                      <span className="text-stone-600 font-medium">Upload new background image</span>
+                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                    </label>
+                    {rsvpTheme.bgImage && (
+                      <button 
+                        onClick={() => setRsvpTheme({ ...rsvpTheme, bgImage: '' })}
+                        className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-3 py-3 rounded-xl font-medium transition"
+                        title="Remove Background Image"
+                      >
+                        Remove Image
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {rsvpTheme.bgImage && (
