@@ -113,8 +113,10 @@ export default function App() {
   const [pinError, setPinError] = useState('');
   const [showShareAccessModal, setShowShareAccessModal] = useState(false);
 
-  const SUPER_ADMIN_PIN = '2425'; // Full access: Guests, Shopping, Stay, Budget & SaaS Theme
-  const FAMILY_PIN = '1111';      // Collaborator access: Guests, Shopping, Stay (Budget hidden)
+  // const SUPER_ADMIN_PIN = '2425'; // Full access: Guests, Shopping, Stay, Budget & SaaS Theme
+  // const FAMILY_PIN = '1111';      // Collaborator access: Guests, Shopping, Stay (Budget hidden)
+  const SUPER_ADMIN_PIN = import.meta.env.SUPER_ADMIN_PIN || '2425';
+  const FAMILY_PIN = import.meta.env.FAMILY_PIN || '1111';
 
   // Core Data States
   const [weddingProfile, setWeddingProfile] = useState(DEFAULT_PROFILE);
@@ -771,7 +773,7 @@ export default function App() {
             )}
 
             <div
-              className="rounded-2xl overflow-hidden shadow-xl border border-stone-200 relative min-h-[650px] flex flex-col justify-between p-6 transition-all"
+              className="rounded-2xl overflow-hidden shadow-xl border border-stone-200 relative min-h-162.5 flex flex-col justify-between p-6 transition-all"
               style={{
                 backgroundColor: rsvpTheme.bgColor,
                 color: rsvpTheme.textColor,
@@ -810,7 +812,7 @@ export default function App() {
                   <p className="text-xs opacity-80">
                     {weddingProfile.dateRangeLabel} • {weddingProfile.city}
                   </p>
-                  <div className="w-full h-[1px] bg-current opacity-15 my-4" />
+                  <div className="w-full h-px bg-current opacity-15 my-4" />
 
                   <div className="text-left space-y-1">
                     <p className="font-semibold text-sm">
