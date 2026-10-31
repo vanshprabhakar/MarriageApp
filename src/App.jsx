@@ -258,13 +258,105 @@ export default function App() {
   };
 
   // Load Data from Supabase or LocalStorage fallback
+  // useEffect(() => {
+  //   async function loadAllData() {
+  //     setIsLoading(true);
+  //     let loadedHouseholds = DEFAULT_HOUSEHOLDS;
+
+  //     if (supabase) {
+  //       try {
+  //         const { data: sData } = await supabase.from('wedding_settings').select('*').eq('id', 1).single();
+  //         if (sData) {
+  //           setWeddingProfile({
+  //             groomName: sData.groom_name,
+  //             brideName: sData.bride_name,
+  //             dateRangeLabel: sData.date_range_label,
+  //             city: sData.city,
+  //             ceremonies: sData.ceremonies?.length ? sData.ceremonies : DEFAULT_PROFILE.ceremonies
+  //           });
+  //           if (sData.rsvp_theme && Object.keys(sData.rsvp_theme).length > 0) {
+  //             setRsvpTheme(sData.rsvp_theme);
+  //           }
+  //         } else {
+  //           await supabase.from('wedding_settings').upsert([{
+  //             id: 1,
+  //             groom_name: DEFAULT_PROFILE.groomName,
+  //             bride_name: DEFAULT_PROFILE.brideName,
+  //             date_range_label: DEFAULT_PROFILE.dateRangeLabel,
+  //             city: DEFAULT_PROFILE.city,
+  //             ceremonies: DEFAULT_PROFILE.ceremonies,
+  //             rsvp_theme: DEFAULT_THEME
+  //           }]);
+  //         }
+
+  //         const { data: hData } = await supabase.from('households').select('*').order('id', { ascending: true });
+  //         if (hData && hData.length > 0) {
+  //           loadedHouseholds = hData.map(mapHouseholdFromDb);
+  //           setHouseholds(loadedHouseholds);
+  //         } else {
+  //           await supabase.from('households').insert(DEFAULT_HOUSEHOLDS.map(mapHouseholdToDb));
+  //         }
+
+  //         const { data: iData } = await supabase.from('inventory').select('*').order('id', { ascending: true });
+  //         if (iData && iData.length > 0) {
+  //           setInventory(iData);
+  //         } else {
+  //           await supabase.from('inventory').insert(DEFAULT_INVENTORY);
+  //         }
+
+  //         const { data: vData } = await supabase.from('vendors').select('*').order('id', { ascending: true });
+  //         if (vData && vData.length > 0) {
+  //           setVendors(vData.map(v => ({ ...v, total: Number(v.total), paid: Number(v.paid), dueDate: v.due_date || '' })));
+  //         } else {
+  //           await supabase.from('vendors').insert(DEFAULT_VENDORS.map(v => ({
+  //             id: v.id, name: v.name, category: v.category, side: v.side, total: v.total, paid: v.paid, due_date: v.dueDate
+  //           })));
+  //         }
+  //       } catch (err) {
+  //         console.error('Supabase fetch error:', err);
+  //       }
+  //     } else {
+  //       const savedProfile = localStorage.getItem('wh_profile');
+  //       const savedTheme = localStorage.getItem('wh_theme');
+  //       const savedHouseholds = localStorage.getItem('wh_households');
+  //       const savedInventory = localStorage.getItem('wh_inventory');
+  //       const savedVendors = localStorage.getItem('wh_vendors');
+
+  //       if (savedProfile) setWeddingProfile(JSON.parse(savedProfile));
+  //       if (savedTheme) setRsvpTheme(JSON.parse(savedTheme));
+  //       if (savedHouseholds) {
+  //         loadedHouseholds = JSON.parse(savedHouseholds);
+  //         setHouseholds(loadedHouseholds);
+  //       }
+  //       if (savedInventory) setInventory(JSON.parse(savedInventory));
+  //       if (savedVendors) setVendors(JSON.parse(savedVendors));
+  //     }
+
+  //     if (initialUrl.guestId) {
+  //       const foundInDb = loadedHouseholds.find(
+  //         h => h.id.toString() === initialUrl.guestId.toString()
+  //       );
+  //       if (foundInDb) {
+  //         syncFormWithGuest(foundInDb);
+  //       } else if (decodedUrlFamily) {
+  //         syncFormWithGuest(decodedUrlFamily);
+  //       }
+  //     }
+
+  //     setIsLoading(false);
+  //   }
+  //   loadAllData();
+  // }, []);
+
+  // 1. Load Data from Supabase (or LocalStorage fallback) & Handle Short Guest Links
   useEffect(() => {
     async function loadAllData() {
       setIsLoading(true);
-      let loadedHouseholds = DEFAULT_HOUSEHOLDS;
+      let loadedHouseholds = households;
 
       if (supabase) {
         try {
+          // Load Wedding Settings & Theme
           const { data: sData } = await supabase.from('wedding_settings').select('*').eq('id', 1).single();
           if (sData) {
             setWeddingProfile({
@@ -289,6 +381,7 @@ export default function App() {
             }]);
           }
 
+          // Load Households
           const { data: hData } = await supabase.from('households').select('*').order('id', { ascending: true });
           if (hData && hData.length > 0) {
             loadedHouseholds = hData.map(mapHouseholdFromDb);
@@ -297,6 +390,7 @@ export default function App() {
             await supabase.from('households').insert(DEFAULT_HOUSEHOLDS.map(mapHouseholdToDb));
           }
 
+          // Load Inventory
           const { data: iData } = await supabase.from('inventory').select('*').order('id', { ascending: true });
           if (iData && iData.length > 0) {
             setInventory(iData);
@@ -304,6 +398,7 @@ export default function App() {
             await supabase.from('inventory').insert(DEFAULT_INVENTORY);
           }
 
+          // Load Vendors
           const { data: vData } = await supabase.from('vendors').select('*').order('id', { ascending: true });
           if (vData && vData.length > 0) {
             setVendors(vData.map(v => ({ ...v, total: Number(v.total), paid: Number(v.paid), dueDate: v.due_date || '' })));
@@ -332,12 +427,27 @@ export default function App() {
         if (savedVendors) setVendors(JSON.parse(savedVendors));
       }
 
+      // Handle Short Guest URL Lookup (?guest=ID)
       if (initialUrl.guestId) {
-        const foundInDb = loadedHouseholds.find(
+        let foundGuest = loadedHouseholds.find(
           h => h.id.toString() === initialUrl.guestId.toString()
         );
-        if (foundInDb) {
-          syncFormWithGuest(foundInDb);
+
+        if (!foundGuest && supabase) {
+          // If not in state yet, query Supabase directly for this specific guest ID
+          const { data: singleGuest } = await supabase
+            .from('households')
+            .select('*')
+            .eq('id', initialUrl.guestId)
+            .single();
+            
+          if (singleGuest) {
+            foundGuest = mapHouseholdFromDb(singleGuest);
+          }
+        }
+
+        if (foundGuest) {
+          syncFormWithGuest(foundGuest);
         } else if (decodedUrlFamily) {
           syncFormWithGuest(decodedUrlFamily);
         }
@@ -578,28 +688,47 @@ export default function App() {
   };
 
   // Self-Contained Personalized WhatsApp Link Generator
+  // const sendWhatsAppInvite = (h) => {
+  //   const baseUrl = window.location.origin.includes('localhost')
+  //     ? LIVE_DOMAIN
+  //     : window.location.origin;
+
+  //   const payload = btoa(encodeURIComponent(JSON.stringify({
+  //     id: h.id,
+  //     name: h.name,
+  //     side: h.side,
+  //     whatsapp: h.whatsapp,
+  //     isOutstation: h.isOutstation,
+  //     invitedEvents: h.invitedEvents,
+  //     status: h.status,
+  //     headcount: h.headcount,
+  //     arrivalDate: h.arrivalDate || '',
+  //     arrivalTime: h.arrivalTime || '',
+  //     departureDate: h.departureDate || '',
+  //     departureTime: h.departureTime || '',
+  //     allocatedStay: h.allocatedStay || 'Unassigned'
+  //   })));
+
+  //   const guestUrl = `${baseUrl}/?guest=${h.id}&d=${payload}`;
+  //   const invitedNames = h.invitedEvents
+  //     .map(eid => weddingProfile.ceremonies.find(c => c.id === eid)?.name)
+  //     .filter(Boolean)
+  //     .join(', ');
+
+  //   const message = encodeURIComponent(
+  //     `Dear ${h.name},\n\nWith joyful hearts, we invite you to the wedding celebrations of *${weddingProfile.groomName} & ${weddingProfile.brideName}* (${weddingProfile.dateRangeLabel} at ${weddingProfile.city}).\n\nInvited Functions: ${invitedNames}\nReserved Seats: ${h.headcount}\n\nPlease confirm your personalized RSVP here:\n${guestUrl}`
+  //   );
+  //   const cleanPhone = h.whatsapp.replace(/[^0-9]/g, '');
+  //   window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
+  // };
+
   const sendWhatsAppInvite = (h) => {
     const baseUrl = window.location.origin.includes('localhost')
       ? LIVE_DOMAIN
       : window.location.origin;
 
-    const payload = btoa(encodeURIComponent(JSON.stringify({
-      id: h.id,
-      name: h.name,
-      side: h.side,
-      whatsapp: h.whatsapp,
-      isOutstation: h.isOutstation,
-      invitedEvents: h.invitedEvents,
-      status: h.status,
-      headcount: h.headcount,
-      arrivalDate: h.arrivalDate || '',
-      arrivalTime: h.arrivalTime || '',
-      departureDate: h.departureDate || '',
-      departureTime: h.departureTime || '',
-      allocatedStay: h.allocatedStay || 'Unassigned'
-    })));
-
-    const guestUrl = `${baseUrl}/?guest=${h.id}&d=${payload}`;
+    // Clean short URL using only the guest ID
+    const guestUrl = `${baseUrl}/?guest=${h.id}`;
     const invitedNames = h.invitedEvents
       .map(eid => weddingProfile.ceremonies.find(c => c.id === eid)?.name)
       .filter(Boolean)
