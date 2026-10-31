@@ -1,11 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users, ShoppingBag, Home, DollarSign, Plus, Trash2, Settings,
-  Check, X, Share2, Upload, MessageCircle, Database, RefreshCw
+  Check, X, Share2, Upload, MessageCircle, Database, Lock, LogOut, ShieldCheck
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 const LIVE_DOMAIN = 'https://marriage-app-olive.vercel.app';
+
+// Synchronously inspect URL parameters BEFORE React's first render
+const getInitialUrlParams = () => {
+  if (typeof window === 'undefined') return { guestId: null, encodedPayload: null };
+  const params = new URLSearchParams(window.location.search);
+  return {
+    guestId: params.get('guest'),
+    encodedPayload: params.get('d')
+  };
+};
+
+// Decode fallback personalization payload from URL so guest ALWAYS sees their personal invite
+const decodeGuestPayload = (encoded) => {
+  if (!encoded) return null;
+  try {
+    return JSON.parse(decodeURIComponent(atob(encoded)));
+  } catch {
+    return null;
+  }
+};
 
 const DEFAULT_PROFILE = {
   groomName: 'Vansh',
@@ -74,13 +94,27 @@ const DEFAULT_VENDORS = [
 ];
 
 export default function App() {
-  // Navigation & URL Guest Lock
-  const [viewMode, setViewMode] = useState('admin'); // 'admin' | 'guest-preview'
-  const [isLockedGuestLink, setIsLockedGuestLink] = useState(false);
+  const initialUrl = getInitialUrlParams();
+  const decodedUrlFamily = decodeGuestPayload(initialUrl.encodedPayload);
+
+  // If ?guest= is in the URL, permanently lock into Guest View before first paint
+  const [isLockedGuestLink] = useState(Boolean(initialUrl.guestId));
+  const [viewMode, setViewMode] = useState(initialUrl.guestId ? 'guest-preview' : 'admin');
   const [activeTab, setActiveTab] = useState('guests');
-  const [selectedGuestPreview, setSelectedGuestPreview] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [rsvpSubmittedToast, setRsvpSubmittedToast] = useState(false);
+
+  // Role-Based Family Organizer Access ('none' | 'collaborator' | 'superadmin')
+  const [adminRole, setAdminRole] = useState(() => {
+    if (typeof window === 'undefined') return 'none';
+    return localStorage.getItem('wh_admin_role') || 'none';
+  });
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [showShareAccessModal, setShowShareAccessModal] = useState(false);
+
+  const SUPER_ADMIN_PIN = '2425'; // Full access: Guests, Shopping, Stay, Budget & SaaS Theme
+  const FAMILY_PIN = '1111';      // Collaborator access: Guests, Shopping, Stay (Budget hidden)
 
   // Core Data States
   const [weddingProfile, setWeddingProfile] = useState(DEFAULT_PROFILE);
@@ -88,6 +122,25 @@ export default function App() {
   const [households, setHouseholds] = useState(DEFAULT_HOUSEHOLDS);
   const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
   const [vendors, setVendors] = useState(DEFAULT_VENDORS);
+
+  // Selected Guest State (Pre-populated from URL payload if opened via WhatsApp link)
+  const [selectedGuestPreview, setSelectedGuestPreview] = useState(
+    decodedUrlFamily || null
+  );
+
+  // Guest RSVP Interactive Form State
+  const [guestRsvpStatus, setGuestRsvpStatus] = useState(
+    decodedUrlFamily?.status && decodedUrlFamily.status !== 'Pending'
+      ? decodedUrlFamily.status
+      : 'Attending'
+  );
+  const [guestRsvpHeadcount, setGuestRsvpHeadcount] = useState(
+    decodedUrlFamily?.headcount || 2
+  );
+  const [guestArrivalDate, setGuestArrivalDate] = useState(decodedUrlFamily?.arrivalDate || '');
+  const [guestArrivalTime, setGuestArrivalTime] = useState(decodedUrlFamily?.arrivalTime || '');
+  const [guestDepartureDate, setGuestDepartureDate] = useState(decodedUrlFamily?.departureDate || '');
+  const [guestDepartureTime, setGuestDepartureTime] = useState(decodedUrlFamily?.departureTime || '');
 
   // Modals
   const [showThemeModal, setShowThemeModal] = useState(false);
@@ -122,15 +175,43 @@ export default function App() {
   const [newCeremonyTime, setNewCeremonyTime] = useState('');
   const [newCeremonyVenue, setNewCeremonyVenue] = useState('');
 
-  // Guest RSVP Interactive Form State
-  const [guestRsvpStatus, setGuestRsvpStatus] = useState('Attending');
-  const [guestRsvpHeadcount, setGuestRsvpHeadcount] = useState(2);
-  const [guestArrivalDate, setGuestArrivalDate] = useState('');
-  const [guestArrivalTime, setGuestArrivalTime] = useState('');
-  const [guestDepartureDate, setGuestDepartureDate] = useState('');
-  const [guestDepartureTime, setGuestDepartureTime] = useState('');
+  const handlePinSubmit = (e) => {
+    e.preventDefault();
+    if (pinInput === SUPER_ADMIN_PIN) {
+      setAdminRole('superadmin');
+      localStorage.setItem('wh_admin_role', 'superadmin');
+      setPinError('');
+    } else if (pinInput === FAMILY_PIN) {
+      setAdminRole('collaborator');
+      localStorage.setItem('wh_admin_role', 'collaborator');
+      if (activeTab === 'budget') setActiveTab('guests');
+      setPinError('');
+    } else {
+      setPinError('Incorrect PIN. Use 1111 for Family or 2425 for Super Admin.');
+    }
+    setPinInput('');
+  };
 
-  // Helper: Mapper from DB snake_case to UI camelCase
+  const handleLogoutOrganizer = () => {
+    setAdminRole('none');
+    localStorage.removeItem('wh_admin_role');
+  };
+
+  const shareOrganizerAccess = (isSuperAdmin = false) => {
+    const baseUrl = window.location.origin.includes('localhost')
+      ? LIVE_DOMAIN
+      : window.location.origin;
+    const pinToShare = isSuperAdmin ? SUPER_ADMIN_PIN : FAMILY_PIN;
+    const roleLabel = isSuperAdmin
+      ? 'Super Admin (All Tabs + Budget)'
+      : 'Family Organizer (Guests, Shopping & Stay)';
+
+    const msg = encodeURIComponent(
+      `Here is your Organizer Access for *${weddingProfile.groomName} & ${weddingProfile.brideName}'s Wedding Hub*:\n\nApp Link: ${baseUrl}\nRole: ${roleLabel}\nOrganizer PIN: *${pinToShare}*\n\nTip: Open the link on your phone and tap "Add to Home Screen" to use it like a native mobile app!`
+    );
+    window.open(`https://wa.me/?text=${msg}`, '_blank');
+  };
+
   const mapHouseholdFromDb = (h) => ({
     id: Number(h.id),
     name: h.name,
@@ -147,7 +228,6 @@ export default function App() {
     allocatedStay: h.allocated_stay || 'Unassigned'
   });
 
-  // Helper: Mapper from UI camelCase to DB snake_case
   const mapHouseholdToDb = (h) => ({
     id: h.id,
     name: h.name,
@@ -164,13 +244,25 @@ export default function App() {
     allocated_stay: h.allocatedStay
   });
 
-  // 1. Load Data from Supabase (or LocalStorage fallback)
+  const syncFormWithGuest = (family) => {
+    if (!family) return;
+    setSelectedGuestPreview(family);
+    setGuestRsvpStatus(family.status === 'Pending' ? 'Attending' : family.status);
+    setGuestRsvpHeadcount(family.headcount);
+    setGuestArrivalDate(family.arrivalDate || '');
+    setGuestArrivalTime(family.arrivalTime || '');
+    setGuestDepartureDate(family.departureDate || '');
+    setGuestDepartureTime(family.departureTime || '');
+  };
+
+  // Load Data from Supabase or LocalStorage fallback
   useEffect(() => {
     async function loadAllData() {
       setIsLoading(true);
+      let loadedHouseholds = DEFAULT_HOUSEHOLDS;
+
       if (supabase) {
         try {
-          // Load Wedding Settings & Theme
           const { data: sData } = await supabase.from('wedding_settings').select('*').eq('id', 1).single();
           if (sData) {
             setWeddingProfile({
@@ -184,7 +276,6 @@ export default function App() {
               setRsvpTheme(sData.rsvp_theme);
             }
           } else {
-            // Seed initial settings row
             await supabase.from('wedding_settings').upsert([{
               id: 1,
               groom_name: DEFAULT_PROFILE.groomName,
@@ -196,15 +287,14 @@ export default function App() {
             }]);
           }
 
-          // Load Households
           const { data: hData } = await supabase.from('households').select('*').order('id', { ascending: true });
           if (hData && hData.length > 0) {
-            setHouseholds(hData.map(mapHouseholdFromDb));
+            loadedHouseholds = hData.map(mapHouseholdFromDb);
+            setHouseholds(loadedHouseholds);
           } else {
             await supabase.from('households').insert(DEFAULT_HOUSEHOLDS.map(mapHouseholdToDb));
           }
 
-          // Load Inventory
           const { data: iData } = await supabase.from('inventory').select('*').order('id', { ascending: true });
           if (iData && iData.length > 0) {
             setInventory(iData);
@@ -212,7 +302,6 @@ export default function App() {
             await supabase.from('inventory').insert(DEFAULT_INVENTORY);
           }
 
-          // Load Vendors
           const { data: vData } = await supabase.from('vendors').select('*').order('id', { ascending: true });
           if (vData && vData.length > 0) {
             setVendors(vData.map(v => ({ ...v, total: Number(v.total), paid: Number(v.paid), dueDate: v.due_date || '' })));
@@ -225,7 +314,6 @@ export default function App() {
           console.error('Supabase fetch error:', err);
         }
       } else {
-        // Fallback to LocalStorage when Supabase .env keys aren't configured yet
         const savedProfile = localStorage.getItem('wh_profile');
         const savedTheme = localStorage.getItem('wh_theme');
         const savedHouseholds = localStorage.getItem('wh_households');
@@ -234,51 +322,46 @@ export default function App() {
 
         if (savedProfile) setWeddingProfile(JSON.parse(savedProfile));
         if (savedTheme) setRsvpTheme(JSON.parse(savedTheme));
-        if (savedHouseholds) setHouseholds(JSON.parse(savedHouseholds));
+        if (savedHouseholds) {
+          loadedHouseholds = JSON.parse(savedHouseholds);
+          setHouseholds(loadedHouseholds);
+        }
         if (savedInventory) setInventory(JSON.parse(savedInventory));
         if (savedVendors) setVendors(JSON.parse(savedVendors));
       }
+
+      if (initialUrl.guestId) {
+        const foundInDb = loadedHouseholds.find(
+          h => h.id.toString() === initialUrl.guestId.toString()
+        );
+        if (foundInDb) {
+          syncFormWithGuest(foundInDb);
+        } else if (decodedUrlFamily) {
+          syncFormWithGuest(decodedUrlFamily);
+        }
+      }
+
       setIsLoading(false);
     }
     loadAllData();
   }, []);
 
-  // Sync to localStorage as backup
+  // Backup state to LocalStorage
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && !isLockedGuestLink) {
       localStorage.setItem('wh_profile', JSON.stringify(weddingProfile));
       localStorage.setItem('wh_theme', JSON.stringify(rsvpTheme));
       localStorage.setItem('wh_households', JSON.stringify(households));
       localStorage.setItem('wh_inventory', JSON.stringify(inventory));
       localStorage.setItem('wh_vendors', JSON.stringify(vendors));
     }
-  }, [weddingProfile, rsvpTheme, households, inventory, vendors, isLoading]);
-
-  // 2. Auto-detect ?guest=ID from WhatsApp URL and open their Guest RSVP Portal directly
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const guestId = params.get('guest');
-    if (guestId && households.length > 0) {
-      const found = households.find(h => h.id.toString() === guestId.toString());
-      if (found) {
-        openGuestPortalForFamily(found);
-        setIsLockedGuestLink(true);
-      }
-    }
-  }, [households]);
+  }, [weddingProfile, rsvpTheme, households, inventory, vendors, isLoading, isLockedGuestLink]);
 
   const openGuestPortalForFamily = (family) => {
-    setSelectedGuestPreview(family);
-    setGuestRsvpStatus(family.status === 'Pending' ? 'Attending' : family.status);
-    setGuestRsvpHeadcount(family.headcount);
-    setGuestArrivalDate(family.arrivalDate || '');
-    setGuestArrivalTime(family.arrivalTime || '');
-    setGuestDepartureDate(family.departureDate || '');
-    setGuestDepartureTime(family.departureTime || '');
+    syncFormWithGuest(family);
     setViewMode('guest-preview');
   };
 
-  // Save Profile & Theme to Supabase
   const saveSettingsToDb = async (updatedProfile = weddingProfile, updatedTheme = rsvpTheme) => {
     if (supabase) {
       await supabase.from('wedding_settings').upsert([{
@@ -293,7 +376,7 @@ export default function App() {
     }
   };
 
-  // Add / Remove Ceremony Handlers
+  // Ceremony Add/Remove
   const addCeremony = async () => {
     if (!newCeremonyName.trim()) return;
     const id = newCeremonyName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now().toString().slice(-3);
@@ -329,7 +412,7 @@ export default function App() {
     await saveSettingsToDb(updatedProfile, rsvpTheme);
   };
 
-  // Household CRUD Operations
+  // Household CRUD
   const handleAddHousehold = async () => {
     if (!newFamilyName.trim()) return;
     const newFamily = {
@@ -374,7 +457,7 @@ export default function App() {
     }
   };
 
-  // Guest RSVP Submission Handler
+  // Guest RSVP Submit
   const handleGuestRsvpSubmit = async () => {
     if (!selectedGuestPreview) return;
     const updatedFamily = {
@@ -393,15 +476,14 @@ export default function App() {
     if (supabase) {
       await supabase
         .from('households')
-        .update(mapHouseholdToDb(updatedFamily))
-        .eq('id', updatedFamily.id);
+        .upsert([mapHouseholdToDb(updatedFamily)]);
     }
 
     setRsvpSubmittedToast(true);
     setTimeout(() => setRsvpSubmittedToast(false), 4000);
   };
 
-  // Shopping Inventory CRUD
+  // Inventory CRUD
   const handleAddInventoryItem = async () => {
     if (!newItemName.trim()) return;
     const newItem = {
@@ -480,7 +562,6 @@ export default function App() {
     }
   };
 
-  // Image Upload Handler
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -494,25 +575,41 @@ export default function App() {
     }
   };
 
-  // WhatsApp Invite Dispatcher (Uses live Vercel URL or current host)
+  // Self-Contained Personalized WhatsApp Link Generator
   const sendWhatsAppInvite = (h) => {
     const baseUrl = window.location.origin.includes('localhost')
       ? LIVE_DOMAIN
       : window.location.origin;
-    const guestUrl = `${baseUrl}/?guest=${h.id}`;
+
+    const payload = btoa(encodeURIComponent(JSON.stringify({
+      id: h.id,
+      name: h.name,
+      side: h.side,
+      whatsapp: h.whatsapp,
+      isOutstation: h.isOutstation,
+      invitedEvents: h.invitedEvents,
+      status: h.status,
+      headcount: h.headcount,
+      arrivalDate: h.arrivalDate || '',
+      arrivalTime: h.arrivalTime || '',
+      departureDate: h.departureDate || '',
+      departureTime: h.departureTime || '',
+      allocatedStay: h.allocatedStay || 'Unassigned'
+    })));
+
+    const guestUrl = `${baseUrl}/?guest=${h.id}&d=${payload}`;
     const invitedNames = h.invitedEvents
       .map(eid => weddingProfile.ceremonies.find(c => c.id === eid)?.name)
       .filter(Boolean)
       .join(', ');
 
     const message = encodeURIComponent(
-      `Dear ${h.name},\n\nWith joyful hearts, we invite you to the wedding celebrations of *${weddingProfile.groomName} & ${weddingProfile.brideName}* (${weddingProfile.dateRangeLabel} at ${weddingProfile.city}).\n\nInvited Functions: ${invitedNames}\nReserved Seats: ${h.headcount}\n\nPlease confirm your RSVP and travel details on your personal link:\n${guestUrl}`
+      `Dear ${h.name},\n\nWith joyful hearts, we invite you to the wedding celebrations of *${weddingProfile.groomName} & ${weddingProfile.brideName}* (${weddingProfile.dateRangeLabel} at ${weddingProfile.city}).\n\nInvited Functions: ${invitedNames}\nReserved Seats: ${h.headcount}\n\nPlease confirm your personalized RSVP here:\n${guestUrl}`
     );
     const cleanPhone = h.whatsapp.replace(/[^0-9]/g, '');
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
   };
 
-  // WhatsApp Stay Allocation Dispatcher
   const sendWhatsAppStayDetails = (h) => {
     const message = encodeURIComponent(
       `Dear ${h.name},\n\nWe look forward to welcoming you to ${weddingProfile.groomName} & ${weddingProfile.brideName}'s wedding!\n\n*Your Hospitality & Room Allocation:*\nHotel/Room: *${h.allocatedStay}*\nCheck-in: ${h.arrivalDate || 'TBD'} (${h.arrivalTime || 'TBD'})\nCheck-out: ${h.departureDate || 'TBD'} (${h.departureTime || 'TBD'})\n\nSee you soon!`
@@ -521,10 +618,67 @@ export default function App() {
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
   };
 
+  // ================= PIN LOCK SCREEN FOR ORGANIZERS =================
+  if (!isLockedGuestLink && adminRole === 'none') {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 font-sans text-stone-900">
+        <form
+          onSubmit={handlePinSubmit}
+          className="bg-white border border-stone-200 rounded-2xl p-6 max-w-sm w-full shadow-lg space-y-5 text-center"
+        >
+          <div className="bg-stone-900 text-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto font-bold text-base shadow-sm">
+            {weddingProfile.groomName?.[0] || 'V'}&{weddingProfile.brideName?.[0] || 'R'}
+          </div>
+          <div>
+            <h2 className="font-semibold text-base">
+              {weddingProfile.groomName} & {weddingProfile.brideName} Wedding Hub
+            </h2>
+            <p className="text-xs text-stone-500 mt-1">
+              Enter your 4-digit Organizer PIN to access the planning workspace.
+            </p>
+          </div>
+          <div>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              placeholder="••••"
+              autoFocus
+              className="w-full text-center tracking-[0.6em] text-xl font-bold border border-stone-300 rounded-xl py-3 focus:outline-none focus:border-stone-900"
+            />
+            {pinError && <p className="text-xs text-red-600 mt-2 font-medium">{pinError}</p>}
+          </div>
+          <button
+            type="submit"
+            className="w-full bg-stone-900 text-white font-semibold py-2.5 rounded-xl text-xs hover:bg-stone-800 transition flex items-center justify-center gap-1.5"
+          >
+            <Lock size={14} /> Unlock Organizer Workspace
+          </button>
+          <div className="pt-2 border-t border-stone-100 text-[11px] text-stone-400 space-y-0.5">
+            <p>Family Collaborator PIN: <span className="font-mono text-stone-600">1111</span></p>
+            <p>Couple Super Admin PIN: <span className="font-mono text-stone-600">2425</span></p>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // Visible tabs based on role (Collaborators see Tabs 1-3; Super Admins see all 4 Tabs)
+  const availableTabs = [
+    { id: 'guests', label: '1. Guests & RSVPs', icon: Users },
+    { id: 'shopping', label: '2. Shopping & Trousseau', icon: ShoppingBag },
+    { id: 'stay', label: '3. Stay & Hospitality', icon: Home },
+    ...(adminRole === 'superadmin'
+      ? [{ id: 'budget', label: '4. Budget & Vendors', icon: DollarSign }]
+      : [])
+  ];
+
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 font-sans antialiased pb-16">
       
-      {/* Top SaaS Navigation Header (Hidden if opened by a guest via ?guest=ID link) */}
+      {/* Admin Header is COMPLETELY HIDDEN when opened via a ?guest= link */}
       {!isLockedGuestLink && (
         <header className="bg-white border-b border-stone-200 sticky top-0 z-40 px-4 py-3">
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -533,25 +687,38 @@ export default function App() {
                 {weddingProfile.groomName?.[0] || 'V'}&{weddingProfile.brideName?.[0] || 'R'}
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <h1 className="font-semibold text-sm sm:text-base">
                     {weddingProfile.groomName} & {weddingProfile.brideName}'s Wedding Hub
                   </h1>
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${supabase ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
                     <Database size={10} /> {supabase ? 'Supabase Live' : 'Local Mode'}
                   </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 text-stone-700 border border-stone-200">
+                    <ShieldCheck size={10} /> {adminRole === 'superadmin' ? 'Super Admin' : 'Family Organizer'}
+                  </span>
                 </div>
                 <p className="text-xs text-stone-500">{weddingProfile.dateRangeLabel} • {weddingProfile.city}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => setShowThemeModal(true)}
-                className="flex items-center gap-1.5 text-xs bg-stone-100 hover:bg-stone-200 text-stone-700 px-3 py-1.5 rounded-lg font-medium transition"
+                onClick={() => setShowShareAccessModal(true)}
+                className="flex items-center gap-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg font-medium transition"
               >
-                <Settings size={14} /> SaaS & RSVP Theme
+                <MessageCircle size={14} /> Invite Family Organizer
               </button>
+
+              {adminRole === 'superadmin' && (
+                <button
+                  onClick={() => setShowThemeModal(true)}
+                  className="flex items-center gap-1.5 text-xs bg-stone-100 hover:bg-stone-200 text-stone-700 px-3 py-1.5 rounded-lg font-medium transition"
+                >
+                  <Settings size={14} /> SaaS & RSVP Theme
+                </button>
+              )}
+
               <div className="bg-stone-100 p-1 rounded-xl flex items-center">
                 <button
                   onClick={() => setViewMode('admin')}
@@ -560,216 +727,236 @@ export default function App() {
                   Admin App
                 </button>
                 <button
-                  onClick={() => openGuestPortalForFamily(households[0])}
+                  onClick={() => openGuestPortalForFamily(selectedGuestPreview || households[0])}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${viewMode === 'guest-preview' ? 'bg-stone-900 text-white shadow-sm' : 'text-stone-600 hover:text-stone-900'}`}
                 >
                   Guest RSVP View
                 </button>
               </div>
+
+              <button
+                onClick={handleLogoutOrganizer}
+                className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition"
+                title="Lock Workspace / Switch Role"
+              >
+                <LogOut size={15} />
+              </button>
             </div>
           </div>
         </header>
       )}
 
-      {/* Main Content Area */}
       <main className="max-w-5xl mx-auto px-4 mt-6">
-        
-        {viewMode === 'guest-preview' ? (
-          /* ================= GUEST RSVP PORTAL VIEW (PRD v1.3 Editorial) ================= */
-          <div
-            className="max-w-md mx-auto rounded-2xl overflow-hidden shadow-xl border border-stone-200 relative min-h-162.5 flex flex-col justify-between p-6 transition-all"
-            style={{
-              backgroundColor: rsvpTheme.bgColor,
-              color: rsvpTheme.textColor,
-              backgroundImage: rsvpTheme.bgImage ? `url(${rsvpTheme.bgImage})` : 'none',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center'
-            }}
-          >
-            {/* Optional Readability Overlay when Background Image is Uploaded */}
-            {rsvpTheme.bgImage && (
-              <div
-                className="absolute inset-0 bg-black pointer-events-none"
-                style={{ opacity: rsvpTheme.overlayOpacity }}
-              />
+        {isLockedGuestLink || viewMode === 'guest-preview' ? (
+          /* ================= GUEST RSVP PORTAL VIEW ================= */
+          <div className="max-w-md mx-auto">
+            {!isLockedGuestLink && (
+              <div className="mb-3 bg-white border border-stone-200 rounded-xl p-2.5 flex items-center justify-between text-xs shadow-2xs">
+                <span className="text-stone-500 font-medium">Previewing Invite For:</span>
+                <select
+                  value={selectedGuestPreview?.id || ''}
+                  onChange={(e) => {
+                    const found = households.find(h => h.id.toString() === e.target.value);
+                    if (found) openGuestPortalForFamily(found);
+                  }}
+                  className="border border-stone-200 rounded-lg px-2.5 py-1 font-semibold text-stone-800 bg-stone-50"
+                >
+                  {households.map(h => (
+                    <option key={h.id} value={h.id}>
+                      {h.name} ({h.headcount} seats)
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
 
-            <div className="relative z-10">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-[11px] uppercase tracking-widest opacity-75 font-mono">
-                  Wedding Invitation
-                </span>
-                {!isLockedGuestLink && (
-                  <button
-                    onClick={() => setViewMode('admin')}
-                    className="text-xs px-2.5 py-1 rounded-full bg-stone-500/20 hover:bg-stone-500/30 backdrop-blur-md transition flex items-center gap-1 font-medium"
-                  >
-                    <X size={12} /> Exit Preview
-                  </button>
-                )}
-              </div>
+            <div
+              className="rounded-2xl overflow-hidden shadow-xl border border-stone-200 relative min-h-[650px] flex flex-col justify-between p-6 transition-all"
+              style={{
+                backgroundColor: rsvpTheme.bgColor,
+                color: rsvpTheme.textColor,
+                backgroundImage: rsvpTheme.bgImage ? `url(${rsvpTheme.bgImage})` : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }}
+            >
+              {rsvpTheme.bgImage && (
+                <div
+                  className="absolute inset-0 bg-black pointer-events-none"
+                  style={{ opacity: rsvpTheme.overlayOpacity }}
+                />
+              )}
 
-              {/* Editorial Couple Header & Personal Greeting */}
-              <div className="text-center mb-6">
-                <h2 className="text-3xl font-serif tracking-tight mb-1">
-                  {weddingProfile.groomName} & {weddingProfile.brideName}
-                </h2>
-                <p className="text-xs opacity-80">
-                  {weddingProfile.dateRangeLabel} • {weddingProfile.city}
-                </p>
-                <div className="w-full h-px bg-current opacity-15 my-4" />
-
-                <div className="text-left space-y-1">
-                  <p className="font-semibold text-sm">
-                    Dear {selectedGuestPreview?.name || 'Guest Family'},
-                  </p>
-                  <p className="text-xs opacity-85 leading-relaxed">
-                    We have reserved up to {selectedGuestPreview?.headcount || 2} seats for your family. All ceremonies feature a 100% pure vegetarian menu.
-                  </p>
-                </div>
-              </div>
-
-              {/* Step 1: Confirm Ceremony Attendance */}
-              <div className="space-y-4 bg-stone-500/10 backdrop-blur-md p-4 rounded-xl border border-current/15">
-                <h3 className="text-xs font-semibold uppercase tracking-wider opacity-85">
-                  1. Your Invited Ceremonies
-                </h3>
-
-                <div className="space-y-2">
-                  {weddingProfile.ceremonies
-                    .filter(c => selectedGuestPreview?.invitedEvents?.includes(c.id))
-                    .map(c => (
-                      <div key={c.id} className="flex items-center justify-between text-xs py-2 border-b border-current/10 last:border-none">
-                        <div>
-                          <p className="font-semibold">{c.name}</p>
-                          <p className="opacity-75 text-[11px]">{c.date} • {c.time} • {c.venue}</p>
-                        </div>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-600 border border-emerald-500/30">
-                          Invited
-                        </span>
-                      </div>
-                    ))}
+              <div className="relative z-10">
+                <div className="flex justify-between items-center mb-6">
+                  <span className="text-[11px] uppercase tracking-widest opacity-75 font-mono">
+                    Wedding Invitation
+                  </span>
+                  {!isLockedGuestLink && (
+                    <button
+                      onClick={() => setViewMode('admin')}
+                      className="text-xs px-2.5 py-1 rounded-full bg-stone-500/20 hover:bg-stone-500/30 backdrop-blur-md transition flex items-center gap-1 font-medium"
+                    >
+                      <X size={12} /> Exit Preview
+                    </button>
+                  )}
                 </div>
 
-                {/* Attendance Status Selector */}
-                <div className="pt-2">
-                  <label className="block text-xs font-medium opacity-85 mb-1.5">
-                    Will you be joining us?
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setGuestRsvpStatus('Attending')}
-                      className={`py-2 rounded-lg text-xs font-semibold border transition ${
-                        guestRsvpStatus === 'Attending'
-                          ? 'bg-stone-900 text-white border-stone-900'
-                          : 'bg-transparent border-current/30 opacity-75'
-                      }`}
-                    >
-                      Joyfully Attending
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGuestRsvpStatus('Declined')}
-                      className={`py-2 rounded-lg text-xs font-semibold border transition ${
-                        guestRsvpStatus === 'Declined'
-                          ? 'bg-red-600 text-white border-red-600'
-                          : 'bg-transparent border-current/30 opacity-75'
-                      }`}
-                    >
-                      Regretfully Decline
-                    </button>
+                {/* Personalized Greeting */}
+                <div className="text-center mb-6">
+                  <h2 className="text-3xl font-serif tracking-tight mb-1">
+                    {weddingProfile.groomName} & {weddingProfile.brideName}
+                  </h2>
+                  <p className="text-xs opacity-80">
+                    {weddingProfile.dateRangeLabel} • {weddingProfile.city}
+                  </p>
+                  <div className="w-full h-[1px] bg-current opacity-15 my-4" />
+
+                  <div className="text-left space-y-1">
+                    <p className="font-semibold text-sm">
+                      Dear {selectedGuestPreview?.name || 'Valued Guest'},
+                    </p>
+                    <p className="text-xs opacity-85 leading-relaxed">
+                      We have reserved up to {selectedGuestPreview?.headcount || 2} seats for your family. All ceremonies feature a 100% pure vegetarian menu.
+                    </p>
                   </div>
                 </div>
 
-                {guestRsvpStatus === 'Attending' && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-medium opacity-85 mb-1">
-                        Total Attending Guests
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={guestRsvpHeadcount}
-                        onChange={(e) => setGuestRsvpHeadcount(e.target.value)}
-                        className="w-full bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                      />
+                {/* Personalized Ceremonies & RSVP Form */}
+                <div className="space-y-4 bg-stone-500/10 backdrop-blur-md p-4 rounded-xl border border-current/15">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider opacity-85">
+                    1. Your Invited Ceremonies
+                  </h3>
+
+                  <div className="space-y-2">
+                    {weddingProfile.ceremonies
+                      .filter(c => selectedGuestPreview?.invitedEvents?.includes(c.id))
+                      .map(c => (
+                        <div key={c.id} className="flex items-center justify-between text-xs py-2 border-b border-current/10 last:border-none">
+                          <div>
+                            <p className="font-semibold">{c.name}</p>
+                            <p className="opacity-75 text-[11px]">{c.date} • {c.time} • {c.venue}</p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-600 border border-emerald-500/30">
+                            Invited
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="block text-xs font-medium opacity-85 mb-1.5">
+                      Will you be joining us?
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setGuestRsvpStatus('Attending')}
+                        className={`py-2 rounded-lg text-xs font-semibold border transition ${
+                          guestRsvpStatus === 'Attending'
+                            ? 'bg-stone-900 text-white border-stone-900'
+                            : 'bg-transparent border-current/30 opacity-75'
+                        }`}
+                      >
+                        Joyfully Attending
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGuestRsvpStatus('Declined')}
+                        className={`py-2 rounded-lg text-xs font-semibold border transition ${
+                          guestRsvpStatus === 'Declined'
+                            ? 'bg-red-600 text-white border-red-600'
+                            : 'bg-transparent border-current/30 opacity-75'
+                        }`}
+                      >
+                        Regretfully Decline
+                      </button>
                     </div>
+                  </div>
 
-                    {selectedGuestPreview?.isOutstation && (
-                      <div className="pt-2 border-t border-current/15 space-y-2">
-                        <h4 className="text-xs font-semibold uppercase tracking-wider opacity-85">
-                          2. Outstation Arrival & Departure
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-[10px] opacity-80 mb-1">Arrival Date & Time</label>
-                            <input
-                              type="date"
-                              value={guestArrivalDate}
-                              onChange={(e) => setGuestArrivalDate(e.target.value)}
-                              className="w-full bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
-                            />
-                            <input
-                              type="time"
-                              value={guestArrivalTime}
-                              onChange={(e) => setGuestArrivalTime(e.target.value)}
-                              className="w-full mt-1 bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] opacity-80 mb-1">Departure Date & Time</label>
-                            <input
-                              type="date"
-                              value={guestDepartureDate}
-                              onChange={(e) => setGuestDepartureDate(e.target.value)}
-                              className="w-full bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
-                            />
-                            <input
-                              type="time"
-                              value={guestDepartureTime}
-                              onChange={(e) => setGuestDepartureTime(e.target.value)}
-                              className="w-full mt-1 bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
-                            />
+                  {guestRsvpStatus === 'Attending' && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium opacity-85 mb-1">
+                          Total Attending Guests (Up to {selectedGuestPreview?.headcount || 2})
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="25"
+                          value={guestRsvpHeadcount}
+                          onChange={(e) => setGuestRsvpHeadcount(e.target.value)}
+                          className="w-full bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                        />
+                      </div>
+
+                      {selectedGuestPreview?.isOutstation && (
+                        <div className="pt-2 border-t border-current/15 space-y-2">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider opacity-85">
+                            2. Outstation Arrival & Departure
+                          </h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] opacity-80 mb-1">Arrival Date & Time</label>
+                              <input
+                                type="date"
+                                value={guestArrivalDate}
+                                onChange={(e) => setGuestArrivalDate(e.target.value)}
+                                className="w-full bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
+                              />
+                              <input
+                                type="time"
+                                value={guestArrivalTime}
+                                onChange={(e) => setGuestArrivalTime(e.target.value)}
+                                className="w-full mt-1 bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] opacity-80 mb-1">Departure Date & Time</label>
+                              <input
+                                type="date"
+                                value={guestDepartureDate}
+                                onChange={(e) => setGuestDepartureDate(e.target.value)}
+                                className="w-full bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
+                              />
+                              <input
+                                type="time"
+                                value={guestDepartureTime}
+                                onChange={(e) => setGuestDepartureTime(e.target.value)}
+                                className="w-full mt-1 bg-white/80 text-stone-900 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </>
-                )}
+                      )}
+                    </>
+                  )}
 
-                <button
-                  onClick={handleGuestRsvpSubmit}
-                  className="w-full bg-stone-900 text-white font-semibold py-2.5 rounded-lg text-sm shadow hover:bg-stone-800 transition mt-2 flex items-center justify-center gap-2"
-                >
-                  <Check size={16} /> Submit RSVP Response
-                </button>
+                  <button
+                    onClick={handleGuestRsvpSubmit}
+                    className="w-full bg-stone-900 text-white font-semibold py-2.5 rounded-lg text-sm shadow hover:bg-stone-800 transition mt-2 flex items-center justify-center gap-2"
+                  >
+                    <Check size={16} /> Submit RSVP Response
+                  </button>
 
-                {rsvpSubmittedToast && (
-                  <div className="p-2.5 rounded-lg bg-emerald-600 text-white text-xs text-center font-medium">
-                    Thank you! Your RSVP has been saved.
-                  </div>
-                )}
+                  {rsvpSubmittedToast && (
+                    <div className="p-2.5 rounded-lg bg-emerald-600 text-white text-xs text-center font-medium">
+                      Thank you! Your RSVP has been recorded.
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="relative z-10 text-center mt-6 text-[10px] opacity-60 font-mono">
-              {weddingProfile.groomName} & {weddingProfile.brideName} Wedding Hub
+              <div className="relative z-10 text-center mt-6 text-[10px] opacity-60 font-mono">
+                {weddingProfile.groomName} & {weddingProfile.brideName} Wedding Celebration
+              </div>
             </div>
           </div>
         ) : (
           /* ================= ADMIN WORKSPACE ================= */
           <div>
-            {/* 4-Tab Bar */}
             <div className="flex border-b border-stone-200 mb-6 overflow-x-auto">
-              {[
-                { id: 'guests', label: '1. Guests & RSVPs', icon: Users },
-                { id: 'shopping', label: '2. Shopping & Trousseau', icon: ShoppingBag },
-                { id: 'stay', label: '3. Stay & Hospitality', icon: Home },
-                { id: 'budget', label: '4. Budget & Vendors', icon: DollarSign },
-              ].map(tab => {
+              {availableTabs.map(tab => {
                 const Icon = tab.icon;
                 return (
                   <button
@@ -790,7 +977,6 @@ export default function App() {
             {/* TAB 1: GUESTS & RSVPS */}
             {activeTab === 'guests' && (
               <div className="space-y-6">
-                {/* Ceremony Headcount Summary Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   {weddingProfile.ceremonies.map(c => {
                     const count = households.reduce(
@@ -799,13 +985,15 @@ export default function App() {
                     );
                     return (
                       <div key={c.id} className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs relative group">
-                        <button
-                          onClick={() => removeCeremony(c.id)}
-                          className="absolute top-2 right-2 text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
-                          title="Remove Ceremony"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {adminRole === 'superadmin' && (
+                          <button
+                            onClick={() => removeCeremony(c.id)}
+                            className="absolute top-2 right-2 text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
+                            title="Remove Ceremony"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                         <p className="text-xs text-stone-500 font-medium">{c.name}</p>
                         <p className="text-xl font-bold mt-1">
                           {count} <span className="text-xs font-normal text-stone-400">guests</span>
@@ -816,13 +1004,12 @@ export default function App() {
                   })}
                 </div>
 
-                {/* Master List */}
                 <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                     <div>
                       <h3 className="font-semibold text-base">Household & RSVP Master List</h3>
                       <p className="text-xs text-stone-500">
-                        Click the green WhatsApp icon to dispatch a live RSVP invite link to any family.
+                        Click WhatsApp on any row to send that family's locked, personalized RSVP link.
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -835,12 +1022,14 @@ export default function App() {
                       >
                         <Plus size={14} /> Add Household
                       </button>
-                      <button
-                        onClick={() => setShowThemeModal(true)}
-                        className="bg-stone-100 text-stone-700 text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-stone-200 transition flex items-center gap-1.5"
-                      >
-                        <Settings size={14} /> Manage Ceremonies
-                      </button>
+                      {adminRole === 'superadmin' && (
+                        <button
+                          onClick={() => setShowThemeModal(true)}
+                          className="bg-stone-100 text-stone-700 text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-stone-200 transition flex items-center gap-1.5"
+                        >
+                          <Settings size={14} /> Manage Ceremonies
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -897,16 +1086,16 @@ export default function App() {
                                 <button
                                   onClick={() => sendWhatsAppInvite(h)}
                                   className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-emerald-700 font-medium transition flex items-center gap-1 text-[11px]"
-                                  title="Send WhatsApp Invite Link"
+                                  title="Send Personalized WhatsApp Link"
                                 >
                                   <MessageCircle size={13} /> WhatsApp
                                 </button>
                                 <button
                                   onClick={() => openGuestPortalForFamily(h)}
-                                  className="p-1.5 hover:bg-stone-200 rounded text-stone-600 transition"
-                                  title="Preview Guest RSVP View"
+                                  className="px-2 py-1 bg-stone-100 hover:bg-stone-200 rounded-lg text-stone-700 transition text-[11px] font-medium"
+                                  title="Preview This Family's Personalized Invite"
                                 >
-                                  <Share2 size={14} />
+                                  Preview
                                 </button>
                                 <button
                                   onClick={() => handleDeleteHousehold(h.id)}
@@ -936,7 +1125,6 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Add Item Form */}
                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
                   <div>
                     <label className="block text-[10px] uppercase font-mono text-stone-500 mb-1">Item Name</label>
@@ -989,7 +1177,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Inventory List */}
                 <div className="space-y-2">
                   {inventory.map(item => (
                     <div key={item.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 bg-stone-50 border border-stone-200 rounded-xl gap-3">
@@ -1078,8 +1265,8 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 4: BUDGET & VENDORS */}
-            {activeTab === 'budget' && (
+            {/* TAB 4: BUDGET & VENDORS (Super Admin Only) */}
+            {activeTab === 'budget' && adminRole === 'superadmin' && (
               <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs space-y-5">
                 <div className="flex justify-between items-center">
                   <div>
@@ -1096,7 +1283,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Summary Cards */}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-stone-50 p-3.5 rounded-xl border border-stone-200">
                     <p className="text-[10px] uppercase font-mono text-stone-500">Total Committed</p>
@@ -1112,7 +1298,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Vendors Table */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
@@ -1161,7 +1346,61 @@ export default function App() {
         )}
       </main>
 
-      {/* ADD HOUSEHOLD MODAL (Headcount + Ceremony Selection Checkboxes) */}
+      {/* INVITE FAMILY ORGANIZER MODAL */}
+      {showShareAccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-base flex items-center gap-2">
+                <Users size={18} /> Share Organizer Access with Family
+              </h3>
+              <button onClick={() => setShowShareAccessModal(false)} className="p-1 hover:bg-stone-100 rounded-full">
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed">
+              Choose which level of access you want to send via WhatsApp. Family members only need to enter the 4-digit PIN once on their phone.
+            </p>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 rounded-xl border border-stone-200 bg-stone-50 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-stone-900">Family Collaborator (PIN: 1111)</p>
+                  <p className="text-[11px] text-stone-500 mt-0.5">
+                    Can manage Guests, Shopping & Outstation Stay. Budget & SaaS settings stay hidden.
+                  </p>
+                </div>
+                <button
+                  onClick={() => shareOrganizerAccess(false)}
+                  className="bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-emerald-700 transition whitespace-nowrap flex items-center gap-1"
+                >
+                  <MessageCircle size={13} /> Share
+                </button>
+              </div>
+
+              {adminRole === 'superadmin' && (
+                <div className="p-3.5 rounded-xl border border-stone-200 bg-stone-50 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-stone-900">Couple Super Admin (PIN: 2425)</p>
+                    <p className="text-[11px] text-stone-500 mt-0.5">
+                      Full access to all 4 tabs including Budget Splits, Vendors & Theme Studio.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => shareOrganizerAccess(true)}
+                    className="bg-stone-900 text-white px-3 py-2 rounded-lg font-medium hover:bg-stone-800 transition whitespace-nowrap flex items-center gap-1"
+                  >
+                    <MessageCircle size={13} /> Share
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD HOUSEHOLD MODAL */}
       {showAddFamilyModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 max-h-[90vh] overflow-y-auto">
@@ -1373,7 +1612,6 @@ export default function App() {
             </div>
 
             <div className="space-y-5 text-xs">
-              {/* Couple & Wedding Details */}
               <div className="space-y-3 pb-4 border-b border-stone-200">
                 <h4 className="font-semibold text-stone-900 uppercase tracking-wider text-[10px] font-mono">
                   Couple & Event Metadata
@@ -1420,7 +1658,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dynamic Ceremonies Manager */}
               <div className="space-y-3 pb-4 border-b border-stone-200">
                 <h4 className="font-semibold text-stone-900 uppercase tracking-wider text-[10px] font-mono">
                   Manage Ceremonies (Add / Subtract)
@@ -1485,7 +1722,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* RSVP Theme Studio */}
               <div className="space-y-3">
                 <h4 className="font-semibold text-stone-900 uppercase tracking-wider text-[10px] font-mono">
                   Guest RSVP Portal Theme
