@@ -115,8 +115,8 @@ export default function App() {
 
   // const SUPER_ADMIN_PIN = '2425'; // Full access: Guests, Shopping, Stay, Budget & SaaS Theme
   // const FAMILY_PIN = '1111';      // Collaborator access: Guests, Shopping, Stay (Budget hidden)
-  const SUPER_ADMIN_PIN = import.meta.env.SUPER_ADMIN_PIN || '2425';
-  const FAMILY_PIN = import.meta.env.FAMILY_PIN || '1111';
+  const SUPER_ADMIN_PIN = import.meta.env.VITE_SUPER_ADMIN_PIN || '2425';
+  const FAMILY_PIN = import.meta.env.VITE_FAMILY_PIN || '1111';
 
   // Core Data States
   const [weddingProfile, setWeddingProfile] = useState(DEFAULT_PROFILE);
