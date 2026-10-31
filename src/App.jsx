@@ -115,8 +115,8 @@ export default function App() {
 
   // const SUPER_ADMIN_PIN = '2425'; // Full access: Guests, Shopping, Stay, Budget & SaaS Theme
   // const FAMILY_PIN = '1111';      // Collaborator access: Guests, Shopping, Stay (Budget hidden)
-  const SUPER_ADMIN_PIN = import.meta.env.VITE_SUPER_ADMIN_PIN || '2425';
-  const FAMILY_PIN = import.meta.env.VITE_FAMILY_PIN || '1111';
+  const SUPER_ADMIN_PIN = import.meta.env.VITE_SUPER_ADMIN_PIN || '2525';
+  const FAMILY_PIN = import.meta.env.VITE_FAMILY_PIN || '1925';
 
   // Core Data States
   const [weddingProfile, setWeddingProfile] = useState(DEFAULT_PROFILE);
@@ -189,7 +189,7 @@ export default function App() {
       if (activeTab === 'budget') setActiveTab('guests');
       setPinError('');
     } else {
-      setPinError('Incorrect PIN. Use 1111 for Family or 2425 for Super Admin.');
+      setPinError('Incorrect PIN.');
     }
     setPinInput('');
   };
@@ -658,10 +658,10 @@ export default function App() {
           >
             <Lock size={14} /> Unlock Organizer Workspace
           </button>
-          <div className="pt-2 border-t border-stone-100 text-[11px] text-stone-400 space-y-0.5">
+          {/* <div className="pt-2 border-t border-stone-100 text-[11px] text-stone-400 space-y-0.5">
             <p>Family Collaborator PIN: <span className="font-mono text-stone-600">1111</span></p>
             <p>Couple Super Admin PIN: <span className="font-mono text-stone-600">2425</span></p>
-          </div>
+          </div> */}
         </form>
       </div>
     );
@@ -1368,7 +1368,7 @@ export default function App() {
             <div className="space-y-3 text-xs">
               <div className="p-3.5 rounded-xl border border-stone-200 bg-stone-50 flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-stone-900">Family Collaborator (PIN: 1111)</p>
+                  <p className="font-semibold text-stone-900">Family Collaborator (PIN: 1925)</p>
                   <p className="text-[11px] text-stone-500 mt-0.5">
                     Can manage Guests, Shopping & Outstation Stay. Budget & SaaS settings stay hidden.
                   </p>
@@ -1384,7 +1384,7 @@ export default function App() {
               {adminRole === 'superadmin' && (
                 <div className="p-3.5 rounded-xl border border-stone-200 bg-stone-50 flex items-center justify-between gap-3">
                   <div>
-                    <p className="font-semibold text-stone-900">Couple Super Admin (PIN: 2425)</p>
+                    <p className="font-semibold text-stone-900">Couple Super Admin (PIN: 2525)</p>
                     <p className="text-[11px] text-stone-500 mt-0.5">
                       Full access to all 4 tabs including Budget Splits, Vendors & Theme Studio.
                     </p>
